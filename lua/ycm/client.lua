@@ -628,12 +628,16 @@ function Client:complete(force_semantic)
 		adjust_insertions(candidates)
 		if #candidates > 0 then
 			local start_column = tonumber(response.completion_start_column) or cursor[2] + 1
-			local completeopt = vim.bo.completeopt
+			-- 'completeopt' is global-local, so the local value is empty when this
+			-- buffer inherits the global value. Use that fallback when constructing
+			-- the temporary local override, then restore the original local state.
+			local local_completeopt = vim.bo.completeopt
+			local completeopt = local_completeopt ~= "" and local_completeopt or vim.o.completeopt
 			if not completeopt:find("noselect", 1, true) then
-				vim.bo.completeopt = completeopt .. ",noselect"
+				vim.bo.completeopt = completeopt == "" and "noselect" or completeopt .. ",noselect"
 			end
 			local ok, complete_err = pcall(vim.fn.complete, start_column, candidates)
-			vim.bo.completeopt = completeopt
+			vim.bo.completeopt = local_completeopt
 			if not ok then
 				notify_error(complete_err)
 			end

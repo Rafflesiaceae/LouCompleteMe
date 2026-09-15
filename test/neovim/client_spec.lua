@@ -132,6 +132,41 @@ vim.api.nvim_win_set_cursor(0, { 1, 4 })
 equal(true, client:_omnifunc_completion(first, false), "regex semantic trigger invokes omnifunc")
 vim.o.virtualedit = ""
 
+local saved_completeopt = vim.o.completeopt
+vim.o.completeopt = "menu"
+vim.bo[first].completeopt = ""
+equal("", vim.bo[first].completeopt, "completeopt uses an unset local value")
+vim.bo[first].filetype = "ycmtest"
+vim.bo[first].omnifunc = ""
+vim.api.nvim_buf_set_lines(first, 0, -1, true, { "alp" })
+vim.api.nvim_win_set_cursor(0, { 1, 3 })
+client.server.ready = true
+client.available_completers.ycmtest = true
+local saved_request = client.request
+client.request = function(_, endpoint, _, _, callback)
+	equal("completions", endpoint, "completion request uses the ycmd handler")
+	callback(nil, {
+		completions = { { insertion_text = "alpha" } },
+		completion_start_column = 1,
+	})
+	return { cancel = function() end }
+end
+local completion_call
+_G.YcmTestComplete = function()
+	local ok, err = pcall(client.complete, client, false)
+	completion_call = { ok = ok, err = err }
+	return ""
+end
+local completion_keys = "i"
+	.. vim.api.nvim_replace_termcodes("<C-R>=v:lua.YcmTestComplete()<CR><Esc>", true, false, true)
+vim.api.nvim_feedkeys(completion_keys, "x", false)
+equal(true, completion_call.ok, "completion works when completeopt has no local override")
+equal("menu", vim.o.completeopt, "completion restores completeopt")
+equal("", vim.bo[first].completeopt, "completion restores the unset local completeopt")
+_G.YcmTestComplete = nil
+client.request = saved_request
+vim.o.completeopt = saved_completeopt
+
 local visit = request.add_ultisnips_data({})
 equal("for", visit.ultisnips_snippets[1].trigger, "UltiSnips candidates are sorted and serialized")
 equal("entry point", visit.ultisnips_snippets[2].description, "UltiSnips descriptions are preserved")
