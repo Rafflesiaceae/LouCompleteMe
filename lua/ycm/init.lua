@@ -359,7 +359,7 @@ function M.find_symbol(scope)
 		-- query is ambiguous; vim.ui.select always expects a list.
 		if response.filepath then
 			response = { response }
-		elseif not vim.tbl_islist(response) then
+		elseif not vim.islist(response) then
 			return
 		end
 		vim.ui.select(response, {

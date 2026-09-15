@@ -763,7 +763,7 @@ function Client:_handle_command_response(response, options)
 			"markdown",
 			{ focus = true, border = "single" }
 		)
-	elseif vim.tbl_islist(response) then
+	elseif vim.islist(response) then
 		local items = {}
 		for _, location in ipairs(response) do
 			items[#items + 1] = {
