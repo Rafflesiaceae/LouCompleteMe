@@ -45,7 +45,7 @@ elseif !has( 'timers' )
         \ echohl None
   call s:restore_cpo()
   finish
-elseif !has( 'python3_compiled' )
+elseif !s:is_neovim && !has( 'python3_compiled' )
   echohl WarningMsg |
         \ echomsg "YouCompleteMe unavailable: requires Vim compiled with " .
         \ "Python (3.12.0+) support." |
@@ -55,7 +55,7 @@ elseif !has( 'python3_compiled' )
 " These calls try to load the Python 3 libraries when Vim is
 " compiled dynamically against them. Since only one can be loaded at a time on
 " some platforms, we first check if Python 3 is available.
-elseif !has( 'python3' )
+elseif !s:is_neovim && !has( 'python3' )
   echohl WarningMsg |
         \ echomsg "YouCompleteMe unavailable: unable to load Python." |
         \ echohl None
@@ -288,6 +288,25 @@ let g:ycm_python_binary_path =
 
 let g:ycm_refilter_workspace_symbols =
       \ get( g:, 'ycm_refilter_workspace_symbols', 1 )
+
+" Neovim has its own Lua client. ycmd still runs as an external Python
+" process, but Neovim no longer needs the Python provider or pynvim.
+if s:is_neovim
+  if !has( 'nvim-0.10' )
+    echohl WarningMsg |
+          \ echomsg "YouCompleteMe unavailable: requires Neovim 0.10+." |
+          \ echohl None
+  elseif has( 'vim_starting' )
+    augroup youcompletemeStart
+      autocmd!
+      autocmd VimEnter * lua require( 'ycm' ).setup()
+    augroup END
+  else
+    lua require( 'ycm' ).setup()
+  endif
+  call s:restore_cpo()
+  finish
+endif
 
 if has( 'vim_starting' ) " Loading at startup.
   " We defer loading until after VimEnter to allow the gui to fork (see

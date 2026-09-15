@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+state="$(mktemp -d /tmp/ycm-neovim-tests.XXXXXX)"
+trap 'rm -rf "$state"' EXIT
+
+XDG_STATE_HOME="$state/state" \
+XDG_DATA_HOME="$state/data" \
+YCM_TEST_ROOT="$root" \
+nvim --clean --noplugin -u NONE -i NONE --headless \
+  --cmd "let g:loaded_python3_provider = 0" \
+  "+lua local ok, err = pcall(dofile, '$root/test/neovim/client_spec.lua'); if not ok then print(err); vim.cmd.cquit() end" \
+  +qa!

@@ -209,10 +209,10 @@ Installation
 
 ### Requirements
 
-| Runtime | Min Version | Recommended Version (full support) | Python |
-|---------|-------------|------------------------------------|--------|
-| Vim     | 9.1.0016    | 9.1.0016                           | 3.12   |
-| Neovim  | 0.5         | Vim 9.1.0016                       | 3.12   |
+| Runtime | Min Version | Recommended Version | Server Python |
+|---------|-------------|---------------------|---------------|
+| Vim     | 9.1.0016    | 9.1.0016            | 3.12          |
+| Neovim  | 0.10        | Latest release      | 3.12          |
 
 #### Supported Vim Versions
 
@@ -220,21 +220,22 @@ Our policy is to support the Vim version that's in the latest LTS of Ubuntu.
 
 Vim must have a [working Python 3 runtime](#supported-python-runtime).
 
-For Neovim users, our policy is to require the latest released version.
-Currently, Neovim 0.5.0 is required.  Please note that some features are not
-available in Neovim, and Neovim is not officially supported.
+Neovim 0.10 or newer uses YCM's native Lua client. Some UI features remain
+Vim-only, as noted in their documentation.
 
 #### Supported Python runtime
 
-YCM has two components: A server and a client. Both the server and client
-require Python 3.12 or later 3.x release. 
+YCM has two components: a server and an editor client. The ycmd server requires
+Python 3.12 or a later 3.x release. The Vim client also runs in Python, while
+the Neovim client is implemented in Lua.
 
 For the Vim client, Vim must be, compiled with `--enable-shared` (or
 `--enable-framework` on macOS). You can check if this is working with `:py3
 import sys; print( sys.version)`. It should say something like `3.12.0 (...)`.
 
-For Neovim, you must have a python 3.12 runtime and the Neovim python
-extensions. See Neovim's `:help provider-python` for how to set that up.
+For Neovim, Python is only used by the external ycmd server. The Neovim Python
+provider and the `pynvim` package are not required. You can deliberately disable
+the provider with `let g:loaded_python3_provider = 0`; YCM will continue to work.
 
 For the server, you must run the `install.py` script with a python 3.12 (or
 later) runtime. Anaconda etc. are not supported. YCM will remember the runtime
@@ -876,10 +877,11 @@ outputs and presents the results to you.
 
 ### Client-Server Architecture
 
-YCM has a client-server architecture; the Vim part of YCM is only a thin client
-that talks to the [ycmd HTTP+JSON server][ycmd] that has the vast majority of
-YCM logic and functionality. The server is started and stopped automatically as
-you start and stop Vim.
+YCM has a client-server architecture; the editor part of YCM is only a thin
+client that talks to the [ycmd HTTP+JSON server][ycmd], which has the vast
+majority of YCM logic and functionality. Vim uses the Python client and Neovim
+uses the Lua client. The server is started and stopped automatically with the
+editor.
 
 ### Completion String Ranking
 
@@ -1817,7 +1819,8 @@ highlight YcmErrorLine guibg=#3f0000
 
 ### Symbol Search
 
-***This feature requires Vim and is not supported in Neovim***
+Neovim presents these results through `vim.ui.select`; the exact interface and
+keys depend on the configured UI provider.
 
 YCM provides a way to search for and jump to a symbol in the current project or
 document when using supported languages.

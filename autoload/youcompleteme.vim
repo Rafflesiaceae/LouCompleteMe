@@ -27,6 +27,76 @@ let s:is_neovim = has( 'nvim' )
 " Only useful in neovim, for handling text properties... I mean extmarks.
 let g:ycm_neovim_ns_id = s:is_neovim ? nvim_create_namespace( 'ycm_id' ) : -1
 
+" Neovim uses the native Lua client. Keep the established autoload API as
+" wrappers so existing mappings and plugins do not need to change.
+if s:is_neovim
+  function! youcompleteme#Enable()
+    lua require( 'ycm' ).setup()
+  endfunction
+
+  function! youcompleteme#EnableCursorMovedAutocommands()
+  endfunction
+
+  function! youcompleteme#DisableCursorMovedAutocommands()
+  endfunction
+
+  function! youcompleteme#GetErrorCount()
+    return luaeval( "require( 'ycm' ).get_error_count()" )
+  endfunction
+
+  function! youcompleteme#GetWarningCount()
+    return luaeval( "require( 'ycm' ).get_warning_count()" )
+  endfunction
+
+  function! youcompleteme#CompleteFunc( findstart, base ) abort
+    return luaeval( "require( 'ycm' ).completefunc()" )
+  endfunction
+
+  function! youcompleteme#ServerPid()
+    return luaeval( "require( 'ycm' ).server_pid()" )
+  endfunction
+
+  function! youcompleteme#GetCommandResponse( ... ) abort
+    return luaeval( "require( 'ycm' ).get_command_response( _A )", a:000 )
+  endfunction
+
+  function! youcompleteme#GetCommandResponseAsync( callback, ... ) abort
+    call luaeval(
+          \ "require( 'ycm' ).get_command_response_async( _A[ 1 ], _A[ 2 ], false )",
+          \ [ a:callback, a:000 ] )
+  endfunction
+
+  function! youcompleteme#GetRawCommandResponseAsync( callback, ... ) abort
+    call luaeval(
+          \ "require( 'ycm' ).get_command_response_async( _A[ 1 ], _A[ 2 ], true )",
+          \ [ a:callback, a:000 ] )
+  endfunction
+
+  function! youcompleteme#SubCommandsComplete( arglead, cmdline, cursorpos )
+    return join( luaeval( "require( 'ycm' ).get_defined_subcommands()" ), "\n" )
+  endfunction
+
+  function! youcompleteme#GetDefinedSubcommands()
+    return luaeval( "require( 'ycm' ).get_defined_subcommands()" )
+  endfunction
+
+  function! youcompleteme#LogsComplete( arglead, cmdline, cursorpos )
+    return ''
+  endfunction
+
+  function! youcompleteme#OpenGoToList()
+    copen
+  endfunction
+
+  function! youcompleteme#Test_GetPollers()
+    return {}
+  endfunction
+
+  let &cpo = s:save_cpo
+  unlet s:save_cpo
+  finish
+endif
+
 " This needs to be called outside of a function
 let s:script_folder_path = escape( expand( '<sfile>:p:h' ), '\' )
 let s:force_semantic = 0
