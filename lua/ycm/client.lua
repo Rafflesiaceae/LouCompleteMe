@@ -175,6 +175,27 @@ local function filetypes_enabled(bufnr)
 	return true
 end
 
+local function regex_matches_at_end(expression, text)
+	-- YCM's trigger expressions use Python's common regex syntax. Vim's very
+	-- magic mode accepts the constructs used by the documented trigger specs.
+	local ok, regex = pcall(vim.regex, "\\v" .. expression)
+	if not ok then
+		return false
+	end
+	local offset = 0
+	while offset <= #text do
+		local start_offset, end_offset = regex:match_str(text:sub(offset + 1))
+		if not start_offset then
+			return false
+		end
+		if offset + end_offset == #text then
+			return true
+		end
+		offset = offset + start_offset + 1
+	end
+	return false
+end
+
 local function trigger_matches(bufnr)
 	local cursor = vim.api.nvim_win_get_cursor(0)
 	local before_cursor = vim.api.nvim_get_current_line():sub(1, cursor[2])
@@ -184,8 +205,9 @@ local function trigger_matches(bufnr)
 		vim.list_extend(triggers, default_semantic_triggers[filetype] or {})
 		vim.list_extend(triggers, configured[filetype] or {})
 		for _, trigger in ipairs(triggers) do
-			-- Python regular expressions are interpreted by ycmd. The Lua client
-			-- handles literal triggers here and leaves regex triggers to ycmd.
+			if trigger:sub(1, 3) == "re!" and regex_matches_at_end(trigger:sub(4), before_cursor) then
+				return true
+			end
 			if trigger:sub(1, 3) ~= "re!" and before_cursor:sub(-#trigger) == trigger then
 				return true
 			end

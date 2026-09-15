@@ -122,6 +122,14 @@ vim.api.nvim_win_set_cursor(0, { 1, 6 })
 equal(true, client:_omnifunc_completion(first, false), "omnifunc cache remains active after the trigger")
 equal(1, #client.last_completion_response.completions, "cached omnifunc candidates are fuzzy-filtered")
 equal("alpha", client.last_completion_response.completions[1].word, "cached omnifunc returns the matching item")
+
+client.omni_cache = nil
+vim.bo[first].filetype = "ycmtest"
+vim.bo[first].omnifunc = "YcmTestOmnifunc"
+vim.g.ycm_semantic_triggers = { ycmtest = { [[re!obj\.$]] } }
+vim.api.nvim_buf_set_lines(first, 0, -1, true, { "obj." })
+vim.api.nvim_win_set_cursor(0, { 1, 4 })
+equal(true, client:_omnifunc_completion(first, false), "regex semantic trigger invokes omnifunc")
 vim.o.virtualedit = ""
 
 local visit = request.add_ultisnips_data({})
