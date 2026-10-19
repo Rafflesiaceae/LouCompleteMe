@@ -183,6 +183,93 @@ for _, omnifunc in ipairs(lua_omnifuncs) do
 end
 _G.YcmTestOmnifunc = nil
 package.loaded.ycm_test_omni = nil
+
+-- Completion failures must bypass error-level notifications, including when
+-- the error is larger than the command line or the command line is hidden.
+local saved_notify = vim.notify
+vim.notify = function()
+	error("completion errors must not use vim.notify")
+end
+local saved_cmdheight = vim.o.cmdheight
+vim.o.cmdheight = 0
+local editing_window = vim.api.nvim_get_current_win()
+local failure_message = "completion failed: 'quoted' \\path\n" .. string.rep("long error ", 100)
+local failure_calls = 0
+_G.YcmTestFailingOmnifunc = function(findstart)
+	if findstart == 1 then
+		return 4
+	end
+	failure_calls = failure_calls + 1
+	vim.api.nvim_win_set_cursor(0, { 1, 0 })
+	error(failure_message, 0)
+end
+client.omni_cache = nil
+vim.bo[first].omnifunc = "v:lua.YcmTestFailingOmnifunc"
+vim.api.nvim_buf_set_lines(first, 0, -1, true, { "obj." })
+vim.api.nvim_win_set_cursor(0, { 1, 4 })
+local original_windows = vim.api.nvim_list_wins()
+equal(true, client:_omnifunc_completion(first, false), "failing omnifunc returns without throwing")
+equal({ 1, 4 }, vim.api.nvim_win_get_cursor(0), "failing omnifunc restores the cursor")
+equal(original_windows, vim.api.nvim_list_wins(), "error display is deferred beyond completion's textlock")
+equal(true, client:_omnifunc_completion(first, false), "repeated omnifunc failures remain handled")
+local pending_failure = client.last_completion_error
+assert(
+	vim.wait(1000, function()
+		return #vim.api.nvim_list_wins() > #original_windows
+	end),
+	"completion error opens a nonmodal preview"
+)
+equal(editing_window, vim.api.nvim_get_current_win(), "completion error does not steal focus")
+equal(pending_failure.message, vim.v.errmsg, "full completion error is retained in v:errmsg")
+assert(vim.v.errmsg:find(failure_message, 1, true), "multiline error text is preserved")
+local error_window = vim.b[first].lsp_floating_preview
+local error_config = vim.api.nvim_win_get_config(error_window)
+equal(false, error_config.focusable, "error preview cannot take keyboard focus")
+assert(error_config.height <= 5, "long errors have a bounded preview height")
+local error_buffer = vim.api.nvim_win_get_buf(error_window)
+equal(
+	pending_failure.message,
+	table.concat(vim.api.nvim_buf_get_lines(error_buffer, 0, -1, true), "\n"),
+	"preview retains the full error"
+)
+equal(true, client:_omnifunc_completion(first, false), "failing completion can be retried")
+equal(pending_failure, client.last_completion_error, "identical failures are deduplicated")
+equal(3, failure_calls, "deduplication does not disable the callback")
+equal(false, vim.api.nvim_get_mode().blocking, "completion error does not enter a blocking prompt")
+
+-- Invoke the same failure during insertion and verify that following input
+-- reaches the buffer without being consumed by an error or hit-enter prompt.
+_G.YcmTestCompleteFailure = function()
+	client:_omnifunc_completion(first, true)
+	return ""
+end
+vim.api.nvim_feedkeys(
+	"a"
+		.. vim.api.nvim_replace_termcodes(
+			"<C-R>=v:lua.YcmTestCompleteFailure()<CR>still_typing<Esc>",
+			true,
+			false,
+			true
+		),
+	"x",
+	false
+)
+equal("obj.still_typing", vim.api.nvim_buf_get_lines(first, 0, 1, true)[1], "typing continues after a completion error")
+equal(editing_window, vim.api.nvim_get_current_win(), "typing after an error stays in the editing window")
+_G.YcmTestCompleteFailure = nil
+if vim.api.nvim_win_is_valid(error_window) then
+	vim.api.nvim_win_close(error_window, true)
+end
+
+-- Success rearms reporting, so a callback which recovers can fail visibly again.
+vim.api.nvim_buf_set_lines(first, 0, -1, true, { "obj." })
+vim.api.nvim_win_set_cursor(0, { 1, 4 })
+vim.bo[first].omnifunc = "YcmTestOmnifunc"
+equal(true, client:_omnifunc_completion(first, false), "completion can recover after an error")
+equal(nil, client.last_completion_error, "successful completion resets error deduplication")
+_G.YcmTestFailingOmnifunc = nil
+vim.o.cmdheight = saved_cmdheight
+vim.notify = saved_notify
 vim.o.virtualedit = ""
 
 local saved_completeopt = vim.o.completeopt
@@ -219,6 +306,52 @@ equal("", vim.bo[first].completeopt, "completion restores the unset local comple
 _G.YcmTestComplete = nil
 client.request = saved_request
 vim.o.completeopt = saved_completeopt
+
+-- ycmd transport and response errors use the same nonmodal path as omnifuncs.
+vim.notify = function()
+	error("completion errors must not use vim.notify")
+end
+for _, failure in ipairs({
+	{ err = "completion transport failed", message = "completion transport failed" },
+	{
+		response = {
+			completions = {},
+			errors = { { message = "first server error" }, { exception = { TYPE = "second server error" } } },
+		},
+		message = "first server error\nsecond server error",
+	},
+}) do
+	client.request = function(_, _, _, _, callback)
+		callback(failure.err, failure.response)
+		return { cancel = function() end }
+	end
+	client:complete(false)
+	assert(
+		vim.wait(1000, function()
+			return vim.v.errmsg == "YouCompleteMe: " .. failure.message
+		end),
+		"native completion error is retained without an error-level notification"
+	)
+	equal(editing_window, vim.api.nvim_get_current_win(), "native completion errors preserve focus")
+	vim.api.nvim_win_close(vim.b[first].lsp_floating_preview, true)
+end
+
+-- An unavailable preview must not turn error reporting into another exception.
+local saved_preview = vim.lsp.util.open_floating_preview
+vim.lsp.util.open_floating_preview = function()
+	error("preview unavailable")
+end
+client:_notify_completion_error("error with unavailable preview")
+assert(
+	vim.wait(1000, function()
+		return vim.v.errmsg == "YouCompleteMe: error with unavailable preview"
+	end),
+	"completion errors remain available if the preview fails"
+)
+equal(false, vim.api.nvim_get_mode().blocking, "a preview failure does not block editing")
+vim.lsp.util.open_floating_preview = saved_preview
+client.request = saved_request
+vim.notify = saved_notify
 
 local visit = request.add_ultisnips_data({})
 equal("for", visit.ultisnips_snippets[1].trigger, "UltiSnips candidates are sorted and serialized")

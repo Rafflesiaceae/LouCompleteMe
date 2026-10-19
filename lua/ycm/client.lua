@@ -31,12 +31,6 @@ local function error_message(value)
 	return value.message or (value.exception and value.exception.TYPE) or vim.inspect(value)
 end
 
-local function show_errors(response)
-	for _, err in ipairs(response and response.errors or {}) do
-		notify_error(error_message(err))
-	end
-end
-
 local function buffer_allowed(bufnr)
 	if not vim.api.nvim_buf_is_valid(bufnr) then
 		return false
@@ -493,6 +487,52 @@ function Client:_native_completer_usable(bufnr)
 	return false
 end
 
+function Client:_notify_completion_error(message)
+	local bufnr = vim.api.nvim_get_current_buf()
+	message = "YouCompleteMe: " .. tostring(message)
+	-- Lua tracebacks can differ between automatic and manually forced calls.
+	local key = message:match("^(.-)\nstack traceback:") or message
+	local previous = self.last_completion_error
+	if previous and previous.bufnr == bufnr and previous.key == key then
+		return
+	end
+	self.last_completion_error = { bufnr = bufnr, message = message, key = key }
+
+	-- Error-level notifications and overflowing command-line messages can pause
+	-- editing. Keep the full message in v:errmsg and show a nonfocusable float
+	-- instead, after leaving completion's textlock. Repeated failures stay quiet
+	-- until completion succeeds or a different error occurs.
+	vim.schedule(function()
+		vim.v.errmsg = message
+		if vim.api.nvim_get_current_buf() ~= bufnr then
+			return
+		end
+		-- Display failures must not interrupt typing either; v:errmsg still holds
+		-- the error if the editor cannot accommodate a floating window.
+		pcall(vim.lsp.util.open_floating_preview, vim.split(message, "\n", { plain = true }), "text", {
+			focus = false,
+			focusable = false,
+			border = "single",
+			max_width = math.max(1, math.min(80, vim.o.columns - 4)),
+			max_height = math.max(1, math.min(5, vim.o.lines - 4)),
+			close_events = { "CursorMoved", "CursorMovedI", "InsertLeave", "BufLeave" },
+		})
+	end)
+end
+
+function Client:_show_completion_errors(response)
+	local messages = {}
+	for _, err in ipairs(response and response.errors or {}) do
+		messages[#messages + 1] = error_message(err)
+	end
+	if #messages > 0 then
+		-- Report a response's errors together so the same batch is deduplicated.
+		self:_notify_completion_error(table.concat(messages, "\n"))
+	else
+		self.last_completion_error = nil
+	end
+end
+
 function Client:_omnifunc_completion(bufnr, force_semantic)
 	local omnifunc = vim.bo[bufnr].omnifunc
 	if omnifunc == "" or not filetypes_enabled(bufnr) then
@@ -545,9 +585,10 @@ function Client:_omnifunc_completion(bufnr, force_semantic)
 	end
 	vim.api.nvim_win_set_cursor(0, cursor)
 	if not ok then
-		notify_error("Omnifunc returned a bad value: " .. tostring(omni_err))
+		self:_notify_completion_error("Omnifunc returned a bad value: " .. tostring(omni_err))
 		return true
 	end
+	self.last_completion_error = nil
 
 	local candidates = {}
 	local query = line:sub(start_column + 1, cursor[2])
@@ -579,7 +620,7 @@ function Client:_omnifunc_completion(bufnr, force_semantic)
 	if #candidates > 0 and vim.api.nvim_get_mode().mode:match("^[iR]") then
 		local complete_ok, complete_err = pcall(vim.fn.complete, start_column + 1, candidates)
 		if not complete_ok then
-			notify_error(complete_err)
+			self:_notify_completion_error(complete_err)
 		end
 	end
 	return true
@@ -616,11 +657,11 @@ function Client:complete(force_semantic)
 		self.completion_request = nil
 		if err or not response then
 			if err and err ~= "Request cancelled" then
-				notify_error(err)
+				self:_notify_completion_error(err)
 			end
 			return
 		end
-		show_errors(response)
+		self:_show_completion_errors(response)
 		self.last_completion_response = response
 		if
 			vim.api.nvim_get_current_buf() ~= bufnr
@@ -649,7 +690,7 @@ function Client:complete(force_semantic)
 			local ok, complete_err = pcall(vim.fn.complete, start_column, candidates)
 			vim.bo.completeopt = local_completeopt
 			if not ok then
-				notify_error(complete_err)
+				self:_notify_completion_error(complete_err)
 			end
 		end
 	end)
@@ -669,7 +710,7 @@ function Client:resolve_completion(item)
 		if err or not response or not response.completion then
 			return
 		end
-		show_errors(response)
+		self:_show_completion_errors(response)
 		local resolved = completion_item(response.completion)
 		if resolved.info ~= "" then
 			vim.lsp.util.open_floating_preview(

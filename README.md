@@ -223,6 +223,11 @@ Vim must have a [working Python 3 runtime](#supported-python-runtime).
 Neovim 0.10 or newer uses YCM's native Lua client. Some UI features remain
 Vim-only, as noted in their documentation.
 
+Completion errors appear in a nonfocusable floating window without pausing
+editing. Repeated identical failures are suppressed until completion succeeds
+or a different error occurs. The latest full error remains available through
+`:echo v:errmsg`, including when the preview cannot be displayed.
+
 #### Supported Python runtime
 
 YCM has two components: a server and an editor client. The ycmd server requires
