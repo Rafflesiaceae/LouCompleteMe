@@ -130,6 +130,59 @@ vim.g.ycm_semantic_triggers = { ycmtest = { [[re!obj\.$]] } }
 vim.api.nvim_buf_set_lines(first, 0, -1, true, { "obj." })
 vim.api.nvim_win_set_cursor(0, { 1, 4 })
 equal(true, client:_omnifunc_completion(first, false), "regex semantic trigger invokes omnifunc")
+
+-- Exercise the runtime Lua callback that used to fail through vim.fn[name].
+client.omni_cache = nil
+client.last_completion_response = nil
+vim.bo[first].filetype = "lua"
+vim.bo[first].omnifunc = "v:lua.vim.lua_omnifunc"
+vim.api.nvim_buf_set_lines(first, 0, -1, true, { "vim." })
+vim.api.nvim_win_set_cursor(0, { 1, 4 })
+equal(true, client:_omnifunc_completion(first, false), "Neovim's Lua omnifunc is callable")
+assert(#client.last_completion_response.completions > 0, "Lua runtime completion returns candidates")
+equal(5, client.last_completion_response.completion_start_column, "Lua runtime completion starts after the dot")
+equal({ 1, 4 }, vim.api.nvim_win_get_cursor(0), "Lua runtime completion restores the cursor")
+
+-- Quoting the base must preserve user text rather than interpreting it as Vimscript.
+local lua_base = [[a'b\c]]
+local lua_calls
+local lua_omnifunc = function(findstart, base)
+	lua_calls[#lua_calls + 1] = { findstart, base, vim.api.nvim_win_get_cursor(0) }
+	if findstart == 1 then
+		return 4
+	end
+	return { words = { base } }
+end
+_G.YcmTestOmnifunc = lua_omnifunc
+package.loaded.ycm_test_omni = { complete = lua_omnifunc }
+local lua_omnifuncs = { "v:lua.YcmTestOmnifunc", "v:lua.require'ycm_test_omni'.complete" }
+local supports_lua_callback = pcall(function()
+	vim.bo[first].omnifunc = lua_omnifunc
+end)
+if supports_lua_callback then
+	lua_omnifuncs[#lua_omnifuncs + 1] = lua_omnifunc
+end
+for _, omnifunc in ipairs(lua_omnifuncs) do
+	lua_calls = {}
+	client.omni_cache = nil
+	vim.bo[first].omnifunc = omnifunc
+	vim.api.nvim_buf_set_lines(first, 0, -1, true, { "obj." .. lua_base })
+	vim.api.nvim_win_set_cursor(0, { 1, 4 + #lua_base })
+	equal(true, client:_omnifunc_completion(first, true), "Lua callback supports forced completion")
+	equal(
+		{ { 1, "", { 1, 4 + #lua_base } }, { 0, lua_base, { 1, 4 } } },
+		lua_calls,
+		"Lua callback receives both completion phases"
+	)
+	equal(
+		lua_base,
+		client.last_completion_response.completions[1].word,
+		"Lua callback preserves quotes and backslashes"
+	)
+	equal({ 1, 4 + #lua_base }, vim.api.nvim_win_get_cursor(0), "Lua callback restores the cursor")
+end
+_G.YcmTestOmnifunc = nil
+package.loaded.ycm_test_omni = nil
 vim.o.virtualedit = ""
 
 local saved_completeopt = vim.o.completeopt

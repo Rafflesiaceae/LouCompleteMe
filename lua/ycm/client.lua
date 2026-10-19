@@ -14,6 +14,16 @@ local function notify_error(message)
 	vim.notify("YouCompleteMe: " .. tostring(message), vim.log.levels.ERROR)
 end
 
+local function call_omnifunc(omnifunc, findstart, base)
+	-- Lua callbacks can be returned directly on newer Neovim versions. For
+	-- string options, evaluate the call so v:lua and Vimscript functions both
+	-- work; vim.fn[name] only resolves Vimscript function names.
+	if type(omnifunc) == "function" then
+		return omnifunc(findstart, base)
+	end
+	return vim.api.nvim_eval(("%s(%d, %s)"):format(omnifunc, findstart, vim.fn.string(base)))
+end
+
 local function error_message(value)
 	if type(value) ~= "table" then
 		return tostring(value)
@@ -513,7 +523,7 @@ function Client:_omnifunc_completion(bufnr, force_semantic)
 		items = vim.deepcopy(cache.items)
 	else
 		ok, omni_err = pcall(function()
-			start_column = tonumber(vim.fn[omnifunc](1, ""))
+			start_column = tonumber(call_omnifunc(omnifunc, 1, ""))
 			if start_column == -3 or start_column == -2 then
 				items = {}
 				return
@@ -524,7 +534,7 @@ function Client:_omnifunc_completion(bufnr, force_semantic)
 
 			local query = line:sub(start_column + 1, cursor[2])
 			vim.api.nvim_win_set_cursor(0, { cursor[1], start_column })
-			items = vim.fn[omnifunc](0, query)
+			items = call_omnifunc(omnifunc, 0, query)
 			if type(items) == "table" and items.words then
 				items = items.words
 			end
