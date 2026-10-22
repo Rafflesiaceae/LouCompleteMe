@@ -391,6 +391,13 @@ function Client:parse(bufnr, force, callback)
 	state.parsed_tick = tick
 	state.parse_request = self:request("event_notification", data, {}, function(err, response)
 		state.parse_request = nil
+		-- The buffer may have been wiped while the request was in flight (e.g.
+		-- the empty startup buffer being replaced by the file being opened).
+		if not vim.api.nvim_buf_is_valid(bufnr) then
+			self.buffers[bufnr] = nil
+			callback(err)
+			return
+		end
 		if not err then
 			self.diagnostics:update(bufnr, response or {}, vim.g.ycm_open_loclist_on_ycm_diags == 1)
 		end

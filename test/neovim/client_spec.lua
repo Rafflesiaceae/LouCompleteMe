@@ -374,4 +374,25 @@ equal("...", echoed:sub(-3), "truncated diagnostics end with an ellipsis")
 equal("short message", Diagnostics.echo_text("short\nmessage"), "short messages are only flattened")
 vim.o.columns = saved_columns
 
+-- A parse response arriving after its buffer was wiped must not raise
+local wiped = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_buf_set_name(wiped, "/tmp/ycm-lua-wiped.cpp")
+vim.bo[wiped].filetype = "cpp"
+local pending_parse
+local saved_parse_request = client.request
+client.request = function(_, _, _, _, callback)
+	pending_parse = callback
+	return { cancel = function() end }
+end
+local parse_result
+client:parse(wiped, true, function(err)
+	parse_result = { err = err }
+end)
+vim.api.nvim_buf_delete(wiped, { force = true })
+local parse_ok, parse_err = pcall(pending_parse, nil, {})
+client.request = saved_parse_request
+equal(true, parse_ok, "parse response for a wiped buffer does not raise: " .. tostring(parse_err))
+equal(true, parse_result ~= nil, "parse callback still runs for a wiped buffer")
+equal(nil, client.buffers[wiped], "state of a wiped buffer is dropped")
+
 print("Neovim Lua client unit tests passed")
