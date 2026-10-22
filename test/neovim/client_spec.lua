@@ -364,4 +364,14 @@ local command_data = client:_command_data({ "--bufnr=" .. target, "GetType" })
 equal("/tmp/ycm-lua-target.cpp", command_data.filepath, "--bufnr commands target the requested buffer")
 equal({ "GetType" }, command_data.command_arguments, "--bufnr is not sent to ycmd as a command argument")
 
+-- Echoed diagnostics must always fit on one command-line row
+local saved_columns = vim.o.columns
+vim.o.columns = 80
+local echoed = Diagnostics.echo_text("In included file: unknown type name 'rxvt_lua_term';\n  did you mean 'rxvt_term'?\n\tnote: error occurred here and then some more")
+equal(false, echoed:find("[\n\t]") ~= nil, "echoed diagnostics are flattened to one line")
+equal(true, vim.fn.strdisplaywidth(echoed) < 80 - 11 - 18, "echoed diagnostics fit next to ruler and showcmd")
+equal("...", echoed:sub(-3), "truncated diagnostics end with an ellipsis")
+equal("short message", Diagnostics.echo_text("short\nmessage"), "short messages are only flattened")
+vim.o.columns = saved_columns
+
 print("Neovim Lua client unit tests passed")

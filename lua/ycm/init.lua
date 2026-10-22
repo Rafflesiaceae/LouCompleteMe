@@ -157,13 +157,7 @@ local function echo_diagnostic()
 	if vim.g.ycm_echo_current_diagnostic ~= 1 then
 		return
 	end
-	local values = vim.diagnostic.get(0, {
-		namespace = client().diagnostics.namespace,
-		lnum = vim.api.nvim_win_get_cursor(0)[1] - 1,
-	})
-	if values[1] then
-		vim.api.nvim_echo({ { values[1].message } }, false, {})
-	end
+	client().diagnostics:echo_current()
 end
 
 local function parse_if_identifier_finished(bufnr)

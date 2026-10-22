@@ -159,6 +159,44 @@ function Diagnostics:counts(bufnr)
 	return errors, warnings
 end
 
+-- Fit a diagnostic message on a single command-line row so echoing it never
+-- triggers a hit-enter prompt. Multiline messages (e.g. clang's "In included
+-- file: ..." notes) are flattened and anything that does not fit is cut off
+-- with an ellipsis. The full text stays available via :YcmShowDetailedDiagnostic.
+function Diagnostics.echo_text(message)
+	local text = tostring(message):gsub("%s+", " ")
+	-- Leave room for the last column plus 'showcmd' and 'ruler' which share
+	-- the command-line row.
+	local width = vim.o.columns - 1
+	if vim.o.showcmd then
+		width = width - 11
+	end
+	if vim.o.ruler then
+		width = width - 18
+	end
+	width = math.max(width, 10)
+	if vim.fn.strdisplaywidth(text) <= width then
+		return text
+	end
+	local count = vim.fn.strchars(text)
+	while count > 0 and vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, count)) > width - 3 do
+		count = count - 1
+	end
+	return vim.fn.strcharpart(text, 0, count) .. "..."
+end
+
+-- Echo the diagnostic on the cursor line without ever blocking the editor.
+function Diagnostics:echo_current()
+	local values = vim.diagnostic.get(0, {
+		namespace = self.namespace,
+		lnum = vim.api.nvim_win_get_cursor(0)[1] - 1,
+	})
+	if values[1] then
+		-- history=false: do not pollute :messages on every cursor movement
+		pcall(vim.api.nvim_echo, { { Diagnostics.echo_text(values[1].message) } }, false, {})
+	end
+end
+
 function Diagnostics:show_current()
 	vim.diagnostic.open_float(0, {
 		namespace = self.namespace,
