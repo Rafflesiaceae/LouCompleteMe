@@ -410,6 +410,40 @@ function Client:parse(bufnr, force, callback)
 	end)
 end
 
+function Client:_show_message_request(message, data)
+	local generation = self.server.generation
+	local function respond(index)
+		-- Picker plugins may finish asynchronously, after ycmd has restarted or
+		-- the originating buffer has gone away. Keep its original routing data.
+		if not self.server.ready or self.server.generation ~= generation then
+			return
+		end
+		local response = vim.tbl_extend("force", data, {
+			request_id = message.request_id,
+			action_index = index and (index - 1) or vim.NIL,
+		})
+		self:request("respond_to_message_request", response, {}, function() end)
+	end
+
+	local actions = message.actions
+	if type(actions) ~= "table" or #actions == 0 then
+		-- Requests without choices are notifications to the user, but the LSP
+		-- still expects an explicit null response.
+		local levels = { vim.log.levels.ERROR, vim.log.levels.WARN, vim.log.levels.INFO, vim.log.levels.DEBUG }
+		vim.notify(message.message, levels[message.type] or vim.log.levels.INFO)
+		respond()
+		return
+	end
+	vim.ui.select(actions, {
+		prompt = message.message,
+		format_item = function(action)
+			return action.title
+		end,
+	}, function(_, index)
+		respond(index)
+	end)
+end
+
 function Client:_start_messages(bufnr)
 	for _, filetype in ipairs(request.filetypes(bufnr)) do
 		if not self.message_requests[filetype] then
@@ -428,6 +462,10 @@ function Client:_start_messages(bufnr)
 					quiet = true,
 					timeout = 65000,
 				}, function(err, response)
+					-- Ignore responses from a poll that belonged to a stopped server.
+					if self.message_requests[filetype] ~= token or not self.server.ready then
+						return
+					end
 					if err then
 						self.message_requests[filetype] = nil
 						return
@@ -438,7 +476,9 @@ function Client:_start_messages(bufnr)
 					end
 					if type(response) == "table" then
 						for _, notification in ipairs(response) do
-							if notification.message then
+							if notification.message_request then
+								self:_show_message_request(notification.message_request, data)
+							elseif notification.message then
 								vim.notify(notification.message)
 							elseif notification.diagnostics and notification.filepath then
 								self.diagnostics:update_for_file(notification.filepath, notification.diagnostics)
